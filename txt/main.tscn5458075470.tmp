@@ -1,0 +1,610 @@
+[gd_scene load_steps=3 format=3 uid="uid://cjj4cmpnpybgg"]
+
+[sub_resource type="GDScript" id="GDScript_cn45q"]
+script/source = "extends Control
+
+# ==============================================================================
+# --- 常量与枚举 ---
+# ==============================================================================
+const SAVE_PROGRESS_PATH := \"user://progress.cfg\"
+const SETTINGS_FILE_PATH := \"user://settings.cfg\"
+const SETTINGS_DIALOG_SCENE := preload(\"res://settings_dialog.tscn\")
+
+enum FileMenuID { OPEN, SAVE, SAVE_AS, QUIT = 4 } # QUIT=4 是为了匹配PopupMenu的内部索引
+enum SettingsMenuID { DISPLAY_SETTINGS }
+enum ViewMenuID { TOGGLE_DIRECTORY, TOGGLE_BORDERLESS, TOGGLE_FULLSCREEN, TOGGLE_ALWAYS_ON_TOP }
+
+
+# ==============================================================================
+# --- 节点引用 (@onready) ---
+# ==============================================================================
+@onready var text_edit: TextEdit = %TextEdit
+@onready var directory_container: VBoxContainer = %DirectoryContainer
+@onready var file_menu: MenuButton = %FileMenu
+@onready var view_menu: MenuButton = %ViewMenu
+@onready var settings_menu: MenuButton = %SettingsMenu
+@onready var file_dialog: FileDialog = %FileDialog
+@onready var save_dialog: FileDialog = %SaveDialog
+@onready var directory_panel: ScrollContainer = %DirectoryPanel
+@onready var margin_container: MarginContainer = %MarginContainer
+@onready var menu_bar: MenuBar = %MenuBar
+@onready var warning_label: Label = %WarningLabel
+@onready var settings_save_timer: Timer = %SettingsSaveTimer
+@onready var quit_confirm_dialog: Window = %QuitConfirmDialog
+
+
+# ==============================================================================
+# --- 状态变量 ---
+# ==============================================================================
+var current_file_path := \"res://book.txt\"
+var title_regex := RegEx.new()
+var is_modified := false
+var settings_dialog_instance: Window # 声明类型
+var is_dragging_window := false
+var drag_start_offset := Vector2.ZERO
+
+
+# ==============================================================================
+# --- Godot 生命周期函数 ---
+# ==============================================================================
+func _ready() -> void:
+	# 程序的初始化入口
+	_initialize_ui_tweaks()
+	_initialize_regex()
+	_initialize_menus()
+	_connect_signals()
+	
+	# 加载用户数据和文件
+	load_progress()
+	load_file(current_file_path)
+	load_settings()
+
+	# 连接主窗口的关闭请求信号
+	get_window().close_requested.connect(_on_main_window_close_requested)
+
+func _process(delta: float) -> void:
+	# 处理无边框窗口拖动
+	if is_dragging_window:
+		var mouse_pos_float := Vector2(DisplayServer.mouse_get_position())
+		DisplayServer.window_set_position(mouse_pos_float - drag_start_offset)
+
+func _notification(what: int) -> void:
+	# 使用 match 语句来处理不同的通知类型
+	match what:
+		# 当窗口失去焦点时
+		NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+			# 保存进度作为一道保险
+			save_progress()
+
+# ==============================================================================
+# --- 初始化辅助函数 ---
+# ==============================================================================
+func _initialize_ui_tweaks() -> void:
+	margin_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# 为菜单栏设置一个最小高度，防止被其他扩展控件完全压缩
+	menu_bar.custom_minimum_size.y = 30
+
+func _initialize_regex() -> void:
+	# 匹配 \"第X章/回/节\" 及其后的标题名
+	title_regex.compile(\"^\\\\s*第.*[章回节].*\\\\s*$\")
+
+func _initialize_menus() -> void:
+	# 文件菜单
+	var file_popup := file_menu.get_popup()
+	file_popup.add_item(\"打开\", FileMenuID.OPEN)
+	file_popup.add_item(\"保存\", FileMenuID.SAVE)
+	file_popup.add_item(\"另存为...\", FileMenuID.SAVE_AS)
+	file_popup.add_separator()
+	file_popup.add_item(\"退出\", FileMenuID.QUIT)
+
+	# 视图菜单
+	var view_popup := view_menu.get_popup()
+	view_popup.add_check_item(\"显示/隐藏目录\", ViewMenuID.TOGGLE_DIRECTORY)
+	view_popup.set_item_checked(ViewMenuID.TOGGLE_DIRECTORY, true)
+	view_popup.add_separator()
+	view_popup.add_check_item(\"无边框模式 (F12)\", ViewMenuID.TOGGLE_BORDERLESS)
+	view_popup.add_check_item(\"全屏 (F11)\", ViewMenuID.TOGGLE_FULLSCREEN)
+	view_popup.add_check_item(\"总在最前 (Ctrl+T)\", ViewMenuID.TOGGLE_ALWAYS_ON_TOP)
+
+	# 设置菜单
+	var settings_popup := settings_menu.get_popup()
+	settings_popup.add_item(\"显示设置...\", SettingsMenuID.DISPLAY_SETTINGS)
+
+func _connect_signals() -> void:
+	# 核心控件
+	text_edit.text_changed.connect(generate_directory)
+	text_edit.text_changed.connect(_on_text_changed)
+	file_dialog.file_selected.connect(_on_file_selected)
+	save_dialog.file_selected.connect(_on_save_dialog_file_selected)
+
+	# UI交互
+	menu_bar.gui_input.connect(_on_menu_bar_gui_input)
+
+	# 计时器
+	settings_save_timer.timeout.connect(save_settings)
+	
+	# 菜单
+	file_menu.get_popup().index_pressed.connect(_on_file_menu_index_pressed)
+	view_menu.get_popup().index_pressed.connect(_on_view_menu_index_pressed)
+	settings_menu.get_popup().index_pressed.connect(_on_settings_menu_index_pressed)
+
+	# 退出确认对话框
+	quit_confirm_dialog.close_requested.connect(_on_quit_dialog_canceled)
+	%SaveAndQuitButton.pressed.connect(_on_quit_dialog_confirmed)
+	%DontSaveAndQuitButton.pressed.connect(_on_quit_dialog_dont_save_pressed)
+	%CancelQuitButton.pressed.connect(_on_quit_dialog_canceled)
+
+
+# ==============================================================================
+# --- 核心功能与逻辑 ---
+# ==============================================================================
+func load_file(path: String) -> void:
+	warning_label.visible = false
+	if not FileAccess.file_exists(path):
+		text_edit.text = \"错误：找不到文件 \" + path
+		return
+
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file:
+		var content := file.get_as_text()
+		
+		# 临时断开信号，避免加载文件内容时触发\"已修改\"状态
+		text_edit.text_changed.disconnect(_on_text_changed)
+		text_edit.text = content
+		text_edit.text_changed.connect(_on_text_changed)
+		
+		text_edit.clear_undo_history()
+		current_file_path = path
+		is_modified = false
+		update_window_title()
+
+		if \" \" in content:
+			warning_label.text = \"警告：文件编码可能不兼容，建议转为UTF-8格式。\"
+			warning_label.visible = true
+		
+		generate_directory()
+
+func save_file(path: String) -> void:
+	var dir_path := path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir_path):
+		var err := DirAccess.make_dir_recursive_absolute(dir_path)
+		if err != OK: return
+
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file:
+		file.store_string(text_edit.text)
+		is_modified = false
+		update_window_title()
+
+func generate_directory() -> void:
+	for child in directory_container.get_children():
+		child.queue_free()
+
+	var lines := text_edit.text.split(\"\\n\")
+	for i in range(lines.size()):
+		var line_text := lines[i].strip_edges()
+		if _is_title(line_text):
+			var button := Button.new()
+			button.text = line_text
+			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			button.pressed.connect(_on_directory_button_pressed.bind(i))
+			directory_container.add_child(button)
+
+func _is_title(line: String) -> bool:
+	if line.is_empty(): return false
+	if title_regex.search(line): return true
+	if line.is_valid_int(): return true
+	return false
+
+func update_window_title() -> void:
+	var title := current_file_path.get_file()
+	if is_modified:
+		title += \" *\"
+	DisplayServer.window_set_title(title)
+
+func _scroll_one_page(direction: int) -> void:
+	var page_lines := floori(text_edit.get_visible_line_count() * 0.9)
+	var current_line := text_edit.get_caret_line()
+	var total_lines := text_edit.get_line_count()
+	var target_line := clampi(current_line + page_lines * direction, 0, total_lines - 1)
+	_on_directory_button_pressed(target_line)
+
+func _scroll_lines(direction: int, num_lines: int = 1) -> void:
+	var current_line := text_edit.get_caret_line()
+	var total_lines := text_edit.get_line_count()
+	var target_line := clampi(current_line + num_lines * direction, 0, total_lines - 1)
+	_on_directory_button_pressed(target_line)
+
+# ==============================================================================
+# --- 信号处理函数 (_on_...) ---
+# ==============================================================================
+func _unhandled_input(event: InputEvent) -> void:
+	# --- 1. 优先处理鼠标滚轮事件 ---
+	if event is InputEventMouseButton:
+		var scroll_speed = 3
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.is_pressed():
+			_scroll_lines(1, scroll_speed)
+			get_tree().root.set_input_as_handled()
+		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.is_pressed():
+			_scroll_lines(-1, scroll_speed)
+			get_tree().root.set_input_as_handled()
+		return
+
+	# --- 2. 处理键盘/手柄的动作事件 ---
+	# Input 单例会自动处理当前事件，无需我们手动传入
+	if Input.is_action_just_pressed(\"open_file\"):
+		file_dialog.popup_centered()
+	elif Input.is_action_just_pressed(\"save_file\"):
+		save_file(current_file_path)
+	elif Input.is_action_just_pressed(\"save_file_as\"):
+		save_dialog.current_path = current_file_path
+		save_dialog.popup_centered()
+	elif Input.is_action_just_pressed(\"toggle_borderless\"):
+		_toggle_borderless()
+	elif Input.is_action_just_pressed(\"toggle_fullscreen\"):
+		_toggle_fullscreen()
+	elif Input.is_action_just_pressed(\"toggle_always_on_top\"):
+		_toggle_always_on_top()
+	elif Input.is_action_just_pressed(\"ui_page_down\"):
+		_scroll_one_page(1)
+	elif Input.is_action_just_pressed(\"ui_page_up\"):
+		_scroll_one_page(-1)
+	elif Input.is_action_just_pressed(\"ui_down\"):
+		_scroll_lines(1)
+	elif Input.is_action_just_pressed(\"ui_up\"):
+		_scroll_lines(-1)
+	else:
+		return
+	
+	get_tree().root.set_input_as_handled()
+
+func _on_text_changed() -> void:
+	if not is_modified:
+		is_modified = true
+		update_window_title()
+
+func _on_file_selected(path: String) -> void: load_file(path)
+func _on_save_dialog_file_selected(new_path: String) -> void:
+	save_file(new_path)
+	current_file_path = new_path
+
+func _on_directory_button_pressed(line_number: int) -> void:
+	text_edit.set_caret_line(line_number, false, true, 0)
+	text_edit.center_viewport_to_caret()
+	text_edit.grab_focus()
+
+func _on_menu_bar_gui_input(event: InputEvent) -> void:
+	if not DisplayServer.window_get_flag(DisplayServer.WINDOW_FLAG_BORDERLESS):
+		is_dragging_window = false
+		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		is_dragging_window = event.is_pressed()
+		if is_dragging_window:
+			drag_start_offset = event.position
+
+# --- 菜单处理 ---
+func _on_file_menu_index_pressed(index: int) -> void:
+	match index:
+		FileMenuID.OPEN: file_dialog.popup_centered()
+		FileMenuID.SAVE: save_file(current_file_path)
+		FileMenuID.SAVE_AS:
+			save_dialog.current_path = current_file_path
+			save_dialog.popup_centered()
+		FileMenuID.QUIT: _try_quit()
+
+func _on_view_menu_index_pressed(index: int) -> void:
+	var popup := view_menu.get_popup()
+	match index:
+		ViewMenuID.TOGGLE_DIRECTORY:
+			directory_panel.visible = not directory_panel.visible
+			popup.set_item_checked(index, directory_panel.visible)
+		ViewMenuID.TOGGLE_BORDERLESS: _toggle_borderless()
+		ViewMenuID.TOGGLE_FULLSCREEN: _toggle_fullscreen()
+		ViewMenuID.TOGGLE_ALWAYS_ON_TOP: _toggle_always_on_top()
+
+func _on_settings_menu_index_pressed(index: int) -> void:
+	if index == SettingsMenuID.DISPLAY_SETTINGS:
+		_open_settings_dialog()
+
+# --- 设置窗口处理 ---
+func _open_settings_dialog() -> void:
+	if not is_instance_valid(settings_dialog_instance):
+		settings_dialog_instance = SETTINGS_DIALOG_SCENE.instantiate()
+		add_child(settings_dialog_instance)
+		settings_dialog_instance.font_size_changed.connect(_on_setting_font_size_changed)
+		settings_dialog_instance.text_color_changed.connect(_on_setting_text_color_changed)
+		settings_dialog_instance.bg_color_changed.connect(_on_setting_bg_color_changed)
+	
+	# 同步UI显示当前设置
+	settings_dialog_instance.font_size_spinbox.value = text_edit.get_theme_font_size(\"font_size\")
+	settings_dialog_instance.text_color_picker.color = text_edit.get_theme_color(\"font_color\")
+	var stylebox = text_edit.get_theme_stylebox(\"normal\")
+	if stylebox is StyleBoxFlat:
+		settings_dialog_instance.bg_color_picker.color = stylebox.bg_color
+	
+	settings_dialog_instance.popup_centered()
+
+func _on_setting_font_size_changed(new_size: int) -> void:
+	text_edit.add_theme_font_size_override(\"font_size\", new_size)
+	settings_save_timer.start()
+
+func _on_setting_text_color_changed(new_color: Color) -> void:
+	text_edit.add_theme_color_override(\"font_color\", new_color)
+	settings_save_timer.start()
+
+func _on_setting_bg_color_changed(new_color: Color) -> void:
+	var stylebox := StyleBoxFlat.new()
+	stylebox.bg_color = new_color
+	text_edit.add_theme_stylebox_override(\"normal\", stylebox)
+	settings_save_timer.start()
+
+func _try_quit() -> void:
+	if not is_modified or text_edit.text.is_empty():
+		save_progress()
+		get_tree().quit()
+	else:
+		quit_confirm_dialog.popup_centered()
+
+func _on_quit_dialog_confirmed() -> void:
+	quit_confirm_dialog.hide()
+	save_file(current_file_path)
+	save_progress()
+	get_tree().quit()
+
+func _on_quit_dialog_dont_save_pressed() -> void:
+	quit_confirm_dialog.hide()
+	save_progress()
+	get_tree().quit()
+
+func _on_quit_dialog_canceled() -> void:
+	quit_confirm_dialog.hide()
+
+# 把它放在信号处理函数区域
+func _on_main_window_close_requested() -> void:
+	# 当用户尝试关闭主窗口时，调用我们的退出决策函数
+	_try_quit()
+
+# ==============================================================================
+# --- 数据持久化 ---
+# ==============================================================================
+func save_progress() -> void:
+	if not is_instance_valid(text_edit): return
+	var config := ConfigFile.new()
+	config.set_value(\"progress\", \"last_file_path\", current_file_path)
+	config.set_value(\"progress\", \"scroll_y\", text_edit.scroll_vertical)
+	config.save(SAVE_PROGRESS_PATH)
+
+func load_progress() -> void:
+	var config := ConfigFile.new()
+	if config.load(SAVE_PROGRESS_PATH) == OK:
+		current_file_path = config.get_value(\"progress\", \"last_file_path\", \"res://book.txt\")
+		var scroll_y = config.get_value(\"progress\", \"scroll_y\", 0)
+		text_edit.call_deferred(\"set_v_scroll\", scroll_y)
+
+func save_settings() -> void:
+	var config := ConfigFile.new()
+	var font_size: int = text_edit.get_theme_font_size(\"font_size\")
+	var font_color: Color = text_edit.get_theme_color(\"font_color\")
+	var stylebox := text_edit.get_theme_stylebox(\"normal\") as StyleBox
+	var bg_color: Color
+	
+	# is_instance_valid() 是检查节点是否存在的，这里应该用 is
+	if stylebox is StyleBoxFlat:
+		bg_color = stylebox.bg_color
+	else:
+		bg_color = Color.WHITE
+
+	config.set_value(\"display\", \"font_size\", font_size)
+	config.set_value(\"display\", \"font_color\", font_color)
+	config.set_value(\"display\", \"bg_color\", bg_color)
+
+	config.save(SETTINGS_FILE_PATH)
+
+func load_settings() -> void:
+	var config := ConfigFile.new()
+	if config.load(SETTINGS_FILE_PATH) == OK:
+		# --- 修正这里：使用 `as` 关键字进行强制类型转换 ---
+		var font_size := config.get_value(\"display\", \"font_size\", 16) as int
+		var font_color := config.get_value(\"display\", \"font_color\", Color.BLACK) as Color
+		var bg_color := config.get_value(\"display\", \"bg_color\", Color.WHITE) as Color
+		
+		_on_setting_font_size_changed(font_size)
+		_on_setting_text_color_changed(font_color)
+		_on_setting_bg_color_changed(bg_color)
+		
+		# 避免在启动时触发保存
+		settings_save_timer.stop()
+		
+		if is_instance_valid(settings_dialog_instance):
+			settings_dialog_instance.font_size_spinbox.value = font_size
+			settings_dialog_instance.text_color_picker.color = font_color
+			settings_dialog_instance.bg_color_picker.color = bg_color
+
+# ==============================================================================
+# --- 窗口管理 ---
+# ==============================================================================
+func _toggle_borderless() -> void:
+	var is_borderless := DisplayServer.window_get_flag(DisplayServer.WINDOW_FLAG_BORDERLESS)
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, not is_borderless)
+	view_menu.get_popup().set_item_checked(ViewMenuID.TOGGLE_BORDERLESS, not is_borderless)
+
+func _toggle_fullscreen() -> void:
+	var current_mode := DisplayServer.window_get_mode()
+	var new_mode := DisplayServer.WINDOW_MODE_FULLSCREEN if current_mode != DisplayServer.WINDOW_MODE_FULLSCREEN else DisplayServer.WINDOW_MODE_WINDOWED
+	DisplayServer.window_set_mode(new_mode)
+	var is_fullscreen := (new_mode == DisplayServer.WINDOW_MODE_FULLSCREEN)
+	view_menu.get_popup().set_item_checked(ViewMenuID.TOGGLE_FULLSCREEN, is_fullscreen)
+
+func _toggle_always_on_top() -> void:
+	var is_on_top := DisplayServer.window_get_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP)
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP, not is_on_top)
+	view_menu.get_popup().set_item_checked(ViewMenuID.TOGGLE_ALWAYS_ON_TOP, not is_on_top)
+"
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ianf1"]
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = SubResource("GDScript_cn45q")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MenuBar" type="MenuBar" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="FileMenu" type="MenuButton" parent="VBoxContainer/MenuBar"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 31.0
+text = "文件"
+
+[node name="PopupMenu" type="PopupMenu" parent="VBoxContainer/MenuBar/FileMenu"]
+oversampling_override = 1.0
+visible = true
+
+[node name="ViewMenu" type="MenuButton" parent="VBoxContainer/MenuBar"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 40.0
+offset_right = 80.000046
+offset_bottom = 31.0
+text = "视图"
+
+[node name="PopupMenu" type="PopupMenu" parent="VBoxContainer/MenuBar/ViewMenu"]
+oversampling_override = 1.0
+position = Vector2i(100, 0)
+visible = true
+
+[node name="SettingsMenu" type="MenuButton" parent="VBoxContainer/MenuBar"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 80.0
+offset_right = 120.0
+offset_bottom = 31.0
+text = "设置"
+
+[node name="MarginContainer" type="MarginContainer" parent="VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 5
+theme_override_constants/margin_bottom = 5
+
+[node name="HSplitContainer" type="HSplitContainer" parent="VBoxContainer/MarginContainer"]
+layout_mode = 2
+split_offset = -420
+
+[node name="DirectoryPanel" type="ScrollContainer" parent="VBoxContainer/MarginContainer/HSplitContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="DirectoryContainer" type="VBoxContainer" parent="VBoxContainer/MarginContainer/HSplitContainer/DirectoryPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="TextEdit" type="TextEdit" parent="VBoxContainer/MarginContainer/HSplitContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+wrap_mode = 1
+
+[node name="FileDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+oversampling_override = 1.0
+title = "Open a File"
+position = Vector2i(120, 62)
+size = Vector2i(496, 320)
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.txt ; Text Files", "* ; All Files")
+
+[node name="SaveDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+oversampling_override = 1.0
+title = "另存为"
+position = Vector2i(120, 62)
+size = Vector2i(496, 320)
+access = 2
+filters = PackedStringArray("*.txt ; Text Files")
+
+[node name="WarningLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 173.0
+offset_top = 607.0
+offset_right = 317.0
+offset_bottom = 630.0
+theme_override_colors/font_color = Color(1, 1, 0, 1)
+theme_override_styles/normal = SubResource("StyleBoxFlat_ianf1")
+text = "警告信息在这里显示"
+
+[node name="SettingsSaveTimer" type="Timer" parent="."]
+unique_name_in_owner = true
+one_shot = true
+
+[node name="QuitConfirmDialog" type="Window" parent="."]
+unique_name_in_owner = true
+oversampling_override = 1.0
+title = "退出确认"
+initial_position = 2
+size = Vector2i(350, 120)
+visible = false
+
+[node name="MarginContainer" type="MarginContainer" parent="QuitConfirmDialog"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="QuitConfirmDialog/MarginContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="QuitConfirmDialog/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 6
+text = "文件尚未保存，是否要保存更改？"
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="HBoxContainer" type="HBoxContainer" parent="QuitConfirmDialog/MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="SaveAndQuitButton" type="Button" parent="QuitConfirmDialog/MarginContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "保存并退出"
+
+[node name="DontSaveAndQuitButton" type="Button" parent="QuitConfirmDialog/MarginContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "不保存退出"
+
+[node name="CancelQuitButton" type="Button" parent="QuitConfirmDialog/MarginContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "取消"

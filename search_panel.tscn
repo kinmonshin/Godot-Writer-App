@@ -1,0 +1,81 @@
+[gd_scene load_steps=2 format=3 uid="uid://c7y47pljsmjy4"]
+
+[ext_resource type="Script" uid="uid://c1oed2ssosgsq" path="res://search_panel.gd" id="1_m0kvg"]
+
+[node name="SearchPanel" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_m0kvg")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 5
+theme_override_constants/margin_bottom = 5
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SearchLineEdit" type="LineEdit" parent="MarginContainer/HBoxContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "查找内容..."
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ReplaceLineEdit" type="LineEdit" parent="MarginContainer/HBoxContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "替换内容"
+
+[node name="ReplaceButton" type="Button" parent="MarginContainer/HBoxContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "单次替换"
+text = "替换"
+
+[node name="ReplaceAllButton" type="Button" parent="MarginContainer/HBoxContainer/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "全局替换"
+text = "全部替换"
+
+[node name="OptionsContainer" type="HBoxContainer" parent="MarginContainer/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="MatchCaseCheck" type="CheckBox" parent="MarginContainer/HBoxContainer/VBoxContainer/OptionsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "区分大小写检查"
+
+[node name="WholeWordsCheck" type="CheckBox" parent="MarginContainer/HBoxContainer/VBoxContainer/OptionsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "整词检查"
+
+[node name="PreviousButton" type="Button" parent="MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "向上搜索"
+text = "㊤"
+
+[node name="NextButton" type="Button" parent="MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "向下搜索"
+text = "㊦"
+
+[node name="CloseButton" type="Button" parent="MarginContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "退出查找和替换"
+text = "✘"

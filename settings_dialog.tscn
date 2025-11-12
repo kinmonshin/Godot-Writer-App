@@ -1,0 +1,54 @@
+[gd_scene load_steps=2 format=3 uid="uid://bosao3f6ti7jf"]
+
+[ext_resource type="Script" uid="uid://ba7k51lhbu4dw" path="res://settings_dialog.gd" id="1_e62lu"]
+
+[node name="SettingsDialog" type="Window"]
+oversampling_override = 1.0
+title = "显示设置"
+initial_position = 2
+size = Vector2i(400, 300)
+script = ExtResource("1_e62lu")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="GridContainer" type="GridContainer" parent="MarginContainer"]
+layout_mode = 2
+columns = 2
+
+[node name="Label" type="Label" parent="MarginContainer/GridContainer"]
+layout_mode = 2
+text = "字体大小"
+
+[node name="FontSizeSpinBox" type="SpinBox" parent="MarginContainer/GridContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 8.0
+max_value = 72.0
+value = 16.0
+
+[node name="Label2" type="Label" parent="MarginContainer/GridContainer"]
+layout_mode = 2
+text = "文本颜色"
+
+[node name="TextColorPicker" type="ColorPickerButton" parent="MarginContainer/GridContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Label3" type="Label" parent="MarginContainer/GridContainer"]
+layout_mode = 2
+text = "背景颜色"
+
+[node name="BgColorPicker" type="ColorPickerButton" parent="MarginContainer/GridContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+color = Color(1, 1, 1, 1)

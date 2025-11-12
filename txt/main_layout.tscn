@@ -1,0 +1,75 @@
+[gd_scene format=3 uid="uid://8hvis1xwdkam"]
+
+[node name="VBoxContainer" type="VBoxContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MenuBar" type="MenuBar" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="FileMenu" type="MenuButton" parent="MenuBar"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 31.0
+text = "文件"
+
+[node name="PopupMenu" type="PopupMenu" parent="MenuBar/FileMenu"]
+oversampling_override = 1.0
+visible = true
+
+[node name="ViewMenu" type="MenuButton" parent="MenuBar"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 40.0
+offset_right = 80.000046
+offset_bottom = 31.0
+text = "视图"
+
+[node name="PopupMenu" type="PopupMenu" parent="MenuBar/ViewMenu"]
+oversampling_override = 1.0
+position = Vector2i(100, 0)
+visible = true
+
+[node name="SettingsMenu" type="MenuButton" parent="MenuBar"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 80.0
+offset_right = 120.0
+offset_bottom = 31.0
+text = "设置"
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 5
+theme_override_constants/margin_bottom = 5
+
+[node name="HSplitContainer" type="HSplitContainer" parent="MarginContainer"]
+layout_mode = 2
+split_offset = -420
+
+[node name="DirectoryPanel" type="ScrollContainer" parent="MarginContainer/HSplitContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="DirectoryContainer" type="VBoxContainer" parent="MarginContainer/HSplitContainer/DirectoryPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="TextEdit" type="TextEdit" parent="MarginContainer/HSplitContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+shortcut_keys_enabled = false
+wrap_mode = 1

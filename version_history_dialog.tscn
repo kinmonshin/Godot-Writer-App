@@ -1,0 +1,58 @@
+[gd_scene load_steps=2 format=3 uid="uid://cetl0nqtcbpvw"]
+
+[ext_resource type="Script" uid="uid://dv74heiudu6vf" path="res://version_history_dialog.gd" id="1_pykb0"]
+
+[node name="VersionHistoryDialog" type="Window"]
+oversampling_override = 1.0
+title = "版本历史"
+position = Vector2i(50, 36)
+size = Vector2i(800, 600)
+visible = false
+script = ExtResource("1_pykb0")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+custom_minimum_size = Vector2(10, 10)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+
+[node name="HeaderLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "选择一个版本以预览或恢复"
+
+[node name="HSplitContainer" type="HSplitContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VersionList" type="ItemList" parent="MarginContainer/VBoxContainer/HSplitContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PreviewTextEdit" type="TextEdit" parent="MarginContainer/VBoxContainer/HSplitContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+editable = false
+
+[node name="FooterContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Control" type="Control" parent="MarginContainer/VBoxContainer/FooterContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="RestoreButton" type="Button" parent="MarginContainer/VBoxContainer/FooterContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "恢复到此版本"
+
+[node name="CloseButton" type="Button" parent="MarginContainer/VBoxContainer/FooterContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "关闭"

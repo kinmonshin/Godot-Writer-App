@@ -1,0 +1,7 @@
+[gd_resource type="Theme" load_steps=2 format=3 uid="uid://nj7qlgpw5hed"]
+
+[ext_resource type="FontFile" uid="uid://cg47si2ljfkao" path="res://txt/阅读字体test/[toolbox]黑体-简繁-Bold(v2.4).ttf" id="1_qlg3v"]
+
+[resource]
+Control/font_sizes/font_size = 16
+Control/fonts/font = ExtResource("1_qlg3v")
